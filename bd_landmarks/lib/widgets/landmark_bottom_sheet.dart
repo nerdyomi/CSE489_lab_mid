@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/landmark.dart';
+import '../screens/landmark_form_screen.dart';
 
 class LandmarkBottomSheet extends StatelessWidget {
   final Landmark landmark;
@@ -78,7 +79,18 @@ class LandmarkBottomSheet extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               FilledButton.icon(
-                onPressed: onEdit,
+                onPressed: () async {
+                  Navigator.pop(context);
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => LandmarkFormScreen(landmark: landmark),
+                    ),
+                  );
+                  if (result == true && onEdit != null) {
+                    onEdit!();
+                  }
+                },
                 icon: const Icon(Icons.edit),
                 label: const Text('Edit'),
               ),

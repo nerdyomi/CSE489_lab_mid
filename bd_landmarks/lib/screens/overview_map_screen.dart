@@ -77,11 +77,8 @@ class _OverviewMapScreenState extends State<OverviewMapScreen> {
       builder: (context) => LandmarkBottomSheet(
         landmark: landmark,
         onEdit: () {
-          Navigator.pop(context);
-          // TODO: Navigate to edit screen
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Edit feature coming soon')),
-          );
+          // Refresh landmarks after edit
+          _loadLandmarks();
         },
         onDelete: () {
           Navigator.pop(context);
