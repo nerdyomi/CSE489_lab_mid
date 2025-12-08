@@ -81,11 +81,8 @@ class _OverviewMapScreenState extends State<OverviewMapScreen> {
           _loadLandmarks();
         },
         onDelete: () {
-          Navigator.pop(context);
-          // TODO: Implement delete functionality
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Delete feature coming soon')),
-          );
+          // Refresh landmarks after delete
+          _loadLandmarks();
         },
       ),
     );

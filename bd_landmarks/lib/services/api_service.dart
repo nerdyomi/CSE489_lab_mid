@@ -45,7 +45,7 @@ class ApiService {
     }
   }
 
-  Future<bool> createLandmark(Landmark landmark, File imageFile) async {
+  Future<bool> createLandmark(Landmark landmark, File? imageFile) async {
     try {
       var request = http.MultipartRequest('POST', Uri.parse(baseUrl));
 
@@ -53,22 +53,82 @@ class ApiService {
       request.fields['lat'] = landmark.lat.toString();
       request.fields['lon'] = landmark.lon.toString();
 
-      request.files.add(
-        await http.MultipartFile.fromPath(
-          'image',
-          imageFile.path,
-        ),
-      );
+      if (imageFile != null) {
+        request.files.add(
+          await http.MultipartFile.fromPath(
+            'image',
+            imageFile.path,
+          ),
+        );
+      }
 
       final response = await request.send();
+      debugPrint('POST $baseUrl => ${response.statusCode}');
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
+      if (response.statusCode >= 200 && response.statusCode < 300) {
         return true;
       } else {
-        throw Exception('Failed to create landmark: ${response.statusCode}');
+        final body = await response.stream.bytesToString();
+        throw Exception('${response.statusCode}: $body');
       }
     } catch (e) {
-      throw Exception('Error creating landmark: $e');
+      throw Exception('$e');
+    }
+  }
+
+  Future<bool> updateLandmark(Landmark landmark, File? imageFile) async {
+    try {
+      final uri = Uri.parse('$baseUrl?id=${landmark.id}');
+      final request = http.MultipartRequest('PUT', uri);
+
+      debugPrint('UPDATE - ID: ${landmark.id}, Title: ${landmark.title}, Lat: ${landmark.lat}, Lon: ${landmark.lon}');
+      
+      request.fields['id'] = landmark.id;
+      request.fields['title'] = landmark.title;
+      request.fields['lat'] = landmark.lat.toString();
+      request.fields['lon'] = landmark.lon.toString();
+
+      if (imageFile != null) {
+        request.files.add(
+          await http.MultipartFile.fromPath('image', imageFile.path),
+        );
+      }
+
+      final response = await request.send();
+      debugPrint('PUT $uri => ${response.statusCode}');
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return true;
+      } else {
+        final body = await response.stream.bytesToString();
+        debugPrint('PUT Error Response: $body');
+        throw Exception('${response.statusCode}: $body');
+      }
+    } catch (e) {
+      debugPrint('PUT Exception: $e');
+      throw Exception('$e');
+    }
+  }
+
+  Future<bool> deleteLandmark(String id) async {
+    try {
+      final uri = Uri.parse('$baseUrl?id=$id');
+      final response = await http.delete(uri).timeout(const Duration(seconds: 10));
+
+      debugPrint('DELETE $uri => ${response.statusCode}');
+      debugPrint('Response: ${response.body}');
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return true;
+      } else {
+        throw Exception('${response.statusCode}');
+      }
+    } on TimeoutException {
+      throw Exception('Request timed out');
+    } on SocketException {
+      throw Exception('Network error');
+    } catch (e) {
+      throw Exception('$e');
     }
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/landmark.dart';
 import '../screens/landmark_form_screen.dart';
+import '../services/api_service.dart';
 
 class LandmarkBottomSheet extends StatelessWidget {
   final Landmark landmark;
@@ -13,6 +14,72 @@ class LandmarkBottomSheet extends StatelessWidget {
     this.onEdit,
     this.onDelete,
   });
+
+  Future<void> _handleDelete(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Landmark'),
+        content: Text('Are you sure you want to delete "${landmark.title}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      // Get the root scaffold context before popping
+      final rootContext = context;
+      
+      try {
+        await ApiService().deleteLandmark(landmark.id);
+        
+        // Close bottom sheet after successful delete
+        if (rootContext.mounted) {
+          Navigator.pop(rootContext);
+          
+          // Show success message using root context
+          ScaffoldMessenger.of(rootContext).showSnackBar(
+            SnackBar(
+              content: Text('${landmark.title} deleted successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          
+          // Trigger refresh callback
+          if (onDelete != null) {
+            Future.microtask(() => onDelete!());
+          }
+        }
+      } catch (e) {
+        if (rootContext.mounted) {
+          showDialog(
+            context: rootContext,
+            builder: (context) => AlertDialog(
+              title: const Text('Error'),
+              content: Text('Failed to delete landmark: $e'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+          );
+        }
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -73,7 +140,7 @@ class LandmarkBottomSheet extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               TextButton.icon(
-                onPressed: onDelete,
+                onPressed: () => _handleDelete(context),
                 icon: const Icon(Icons.delete_outline, color: Colors.red),
                 label: const Text('Delete', style: TextStyle(color: Colors.red)),
               ),
@@ -87,8 +154,16 @@ class LandmarkBottomSheet extends StatelessWidget {
                       builder: (context) => LandmarkFormScreen(landmark: landmark),
                     ),
                   );
-                  if (result == true && onEdit != null) {
-                    onEdit!();
+                  if (result == true && context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Landmark updated successfully'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                    if (onEdit != null) {
+                      onEdit!();
+                    }
                   }
                 },
                 icon: const Icon(Icons.edit),

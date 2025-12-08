@@ -185,13 +185,6 @@ class _LandmarkFormScreenState extends State<LandmarkFormScreen> {
       return;
     }
 
-    if (!isEditMode && _imageFile == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select an image')),
-      );
-      return;
-    }
-
     setState(() {
       _isSubmitting = true;
     });
@@ -205,49 +198,60 @@ class _LandmarkFormScreenState extends State<LandmarkFormScreen> {
         imageUrl: isEditMode ? widget.landmark!.imageUrl : '',
       );
 
-      // For create mode, we need an image file
-      if (!isEditMode && _imageFile != null) {
-        final success = await ApiService().createLandmark(landmark, _imageFile!);
+      debugPrint('FORM_SUBMIT - isEditMode: $isEditMode, Landmark ID: ${landmark.id}, Title: ${landmark.title}');
+
+      if (isEditMode) {
+        // Edit mode - use updateLandmark
+        final success = await ApiService().updateLandmark(landmark, _imageFile);
+        
+        if (mounted) {
+          if (success) {
+            Navigator.pop(context, true); // Return true to indicate success
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Failed to update landmark'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        }
+      } else {
+        // Create mode - image is optional
+        final success = await ApiService().createLandmark(landmark, _imageFile);
         
         if (mounted) {
           if (success) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Landmark created successfully')),
+              const SnackBar(
+                content: Text('Landmark added successfully'),
+                backgroundColor: Colors.green,
+              ),
             );
-            Navigator.pop(context, true); // Return true to indicate success
+            // Reset form for next entry
+            _titleController.clear();
+            _latController.clear();
+            _lonController.clear();
+            setState(() {
+              _imageFile = null;
+            });
           } else {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Failed to create landmark')),
+              const SnackBar(
+                content: Text('Failed to create landmark'),
+                backgroundColor: Colors.red,
+              ),
             );
           }
-        }
-      } else if (isEditMode) {
-        // For edit mode, image is optional
-        if (_imageFile != null) {
-          final success = await ApiService().createLandmark(landmark, _imageFile!);
-          if (mounted) {
-            if (success) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Landmark updated successfully')),
-              );
-              Navigator.pop(context, true);
-            } else {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Failed to update landmark')),
-              );
-            }
-          }
-        } else {
-          // TODO: Implement update without image change
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Update without image change not implemented yet')),
-          );
         }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } finally {
