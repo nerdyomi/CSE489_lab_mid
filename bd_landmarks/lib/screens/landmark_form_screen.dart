@@ -1,6 +1,9 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:path_provider/path_provider.dart';
 import '../models/landmark.dart';
 import '../services/api_service.dart';
 
@@ -22,6 +25,7 @@ class _LandmarkFormScreenState extends State<LandmarkFormScreen> {
   File? _imageFile;
   final ImagePicker _picker = ImagePicker();
   bool _isSubmitting = false;
+  bool _isGettingLocation = false;
 
   bool get isEditMode => widget.landmark != null;
 
@@ -43,6 +47,78 @@ class _LandmarkFormScreenState extends State<LandmarkFormScreen> {
     super.dispose();
   }
 
+  Future<void> _getCurrentLocation() async {
+    setState(() {
+      _isGettingLocation = true;
+    });
+
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        throw Exception('Location services are disabled');
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          throw Exception('Location permissions are denied');
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        throw Exception('Location permissions are permanently denied');
+      }
+
+      Position position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      );
+
+      setState(() {
+        _latController.text = position.latitude.toStringAsFixed(6);
+        _lonController.text = position.longitude.toStringAsFixed(6);
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Location detected successfully')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error getting location: $e')),
+        );
+      }
+    } finally {
+      setState(() {
+        _isGettingLocation = false;
+      });
+    }
+  }
+
+  Future<File?> _compressImage(File file) async {
+    try {
+      final dir = await getTemporaryDirectory();
+      final targetPath = '${dir.path}/${DateTime.now().millisecondsSinceEpoch}_compressed.jpg';
+
+      final result = await FlutterImageCompress.compressAndGetFile(
+        file.absolute.path,
+        targetPath,
+        minWidth: 800,
+        minHeight: 600,
+        quality: 85,
+      );
+
+      return result != null ? File(result.path) : null;
+    } catch (e) {
+      debugPrint('Error compressing image: $e');
+      return file; // Return original if compression fails
+    }
+  }
+
   Future<void> _pickImage(ImageSource source) async {
     try {
       final XFile? pickedFile = await _picker.pickImage(
@@ -53,9 +129,19 @@ class _LandmarkFormScreenState extends State<LandmarkFormScreen> {
       );
 
       if (pickedFile != null) {
+        // Compress the image before storing
+        File originalFile = File(pickedFile.path);
+        File? compressedFile = await _compressImage(originalFile);
+        
         setState(() {
-          _imageFile = File(pickedFile.path);
+          _imageFile = compressedFile ?? originalFile;
         });
+        
+        if (mounted && compressedFile != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Image compressed and ready')),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -242,6 +328,24 @@ class _LandmarkFormScreenState extends State<LandmarkFormScreen> {
               },
             ),
             const SizedBox(height: 16),
+
+            // GPS Location Button (only in create mode)
+            if (!isEditMode)
+              OutlinedButton.icon(
+                onPressed: _isGettingLocation ? null : _getCurrentLocation,
+                icon: _isGettingLocation
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.my_location),
+                label: Text(_isGettingLocation ? 'Getting Location...' : 'Use Current Location'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            if (!isEditMode) const SizedBox(height: 16),
 
             // Latitude field
             TextFormField(
