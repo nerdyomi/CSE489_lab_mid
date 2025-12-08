@@ -18,26 +18,9 @@ class LandmarkCard extends StatelessWidget {
         children: [
           Container(
             width: double.infinity,
-            height: 100,
+            height: 80,
             color: Colors.grey[300],
-            child: Image.network(
-              landmark.imageUrl,
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) {
-                return Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.image_not_supported,
-                          size: 48, color: Colors.grey[600]),
-                      const SizedBox(height: 8),
-                      Text('No Image-hehehe',
-                          style: TextStyle(color: Colors.grey[600])),
-                    ],
-                  ),
-                );
-              },
-            ),
+            child: _buildImage(),
           ),
           Padding(
             padding: const EdgeInsets.all(10),
@@ -72,4 +55,34 @@ class LandmarkCard extends StatelessWidget {
       ),
     );
   }
+
+  Widget _buildImage() {
+    if (landmark.imageUrl.isEmpty) {
+      return _buildErrorWidget();
+    }
+
+    return Image.network(
+      landmark.imageUrl,
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) {
+        return _buildErrorWidget();
+      },
+    );
+  }
+
+  Widget _buildErrorWidget() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.image_not_supported,
+              size: 48, color: Colors.grey[600]),
+          const SizedBox(height: 8),
+          Text('No Image',
+              style: TextStyle(color: Colors.grey[600])),
+        ],
+      ),
+    );
+  }
 }
+

@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/landmark.dart';
 
@@ -8,14 +10,36 @@ class ApiService {
 
   Future<List<Landmark>> fetchLandmarks() async {
     try {
-      final response = await http.get(Uri.parse(baseUrl));
+      final uri = Uri.parse(baseUrl);
+      final response = await http.get(uri).timeout(const Duration(seconds: 10));
+
+      debugPrint('GET $uri => ${response.statusCode}');
+      final previewLen = response.body.length > 200 ? 200 : response.body.length;
+      debugPrint('Body (first $previewLen chars): ${response.body.substring(0, previewLen)}');
 
       if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.map((json) => Landmark.fromJson(json)).toList();
+        final decoded = json.decode(response.body);
+
+        List<dynamic> items;
+        if (decoded is List) {
+          items = decoded;
+        } else if (decoded is Map && decoded['data'] is List) {
+          items = decoded['data'];
+        } else {
+          throw Exception('Unexpected response format');
+        }
+
+        return items
+          .whereType<Map<String, dynamic>>()
+          .map(Landmark.fromJson)
+          .toList();
       } else {
         throw Exception('Failed to load landmarks: ${response.statusCode}');
       }
+    } on TimeoutException {
+      throw Exception('Error fetching landmarks: request timed out');
+    } on SocketException {
+      throw Exception('Error fetching landmarks: network unavailable');
     } catch (e) {
       throw Exception('Error fetching landmarks: $e');
     }

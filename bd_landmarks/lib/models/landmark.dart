@@ -14,12 +14,23 @@ class Landmark {
   });
 
   factory Landmark.fromJson(Map<String, dynamic> json) {
+    String imageUrl = json['image'] as String? ?? '';
+    
+    // If image is a relative path, prepend the base URL
+    if (imageUrl.isNotEmpty && !imageUrl.startsWith('http')) {
+      imageUrl = 'https://labs.anontech.info/cse489/t3/$imageUrl';
+    }
+    
     return Landmark(
-      id: json['id'] as String,
-      title: json['title'] as String,
-      lat: (json['lat'] as num).toDouble(),
-      lon: (json['lon'] as num).toDouble(),
-      imageUrl: json['imageUrl'] as String,
+      id: (json['id'] ?? '').toString(),
+      title: json['title'] as String? ?? 'Unknown',
+      lat: (json['lat'] is String 
+          ? double.tryParse(json['lat'] as String) ?? 0.0
+          : (json['lat'] as num? ?? 0).toDouble()),
+      lon: (json['lon'] is String 
+          ? double.tryParse(json['lon'] as String) ?? 0.0
+          : (json['lon'] as num? ?? 0).toDouble()),
+      imageUrl: imageUrl,
     );
   }
 

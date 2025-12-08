@@ -1,69 +1,67 @@
 import 'package:flutter/material.dart';
 import '../models/landmark.dart';
+import '../services/api_service.dart';
 import '../widgets/landmark_card.dart';
 
-class RecordsListScreen extends StatelessWidget {
+class RecordsListScreen extends StatefulWidget {
   const RecordsListScreen({super.key});
 
-  // Dummy data for now
-  List<Landmark> _getDummyLandmarks() {
-    return [
-      Landmark(
-        id: '1',
-        title: 'Dhaka City Hall',
-        lat: 23.8103,
-        lon: 90.4125,
-        imageUrl: 'https://via.placeholder.com/400x200?text=Dhaka+City+Hall',
-      ),
-      Landmark(
-        id: '2',
-        title: 'National Mosque',
-        lat: 23.7645,
-        lon: 90.3572,
-        imageUrl: 'https://via.placeholder.com/400x200?text=National+Mosque',
-      ),
-      Landmark(
-        id: '3',
-        title: 'Liberation War Museum',
-        lat: 23.8103,
-        lon: 90.4225,
-        imageUrl: 'https://via.placeholder.com/400x200?text=War+Museum',
-      ),
-      Landmark(
-        id: '4',
-        title: 'Ahsan Manzil Palace',
-        lat: 23.7597,
-        lon: 90.2562,
-        imageUrl: 'https://via.placeholder.com/400x200?text=Ahsan+Manzil',
-      ),
-      Landmark(
-        id: '5',
-        title: 'Lalbagh Fort',
-        lat: 23.7598,
-        lon: 90.2567,
-        imageUrl: 'https://via.placeholder.com/400x200?text=Lalbagh+Fort',
-      ),
-    ];
+  @override
+  State<RecordsListScreen> createState() => _RecordsListScreenState();
+}
+
+class _RecordsListScreenState extends State<RecordsListScreen> {
+  late Future<List<Landmark>> _landmarksFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _landmarksFuture = ApiService().fetchLandmarks();
   }
 
   @override
   Widget build(BuildContext context) {
-    final landmarks = _getDummyLandmarks();
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Records'),
       ),
-      body: landmarks.isEmpty
-          ? const Center(
+      body: FutureBuilder<List<Landmark>>(
+        future: _landmarksFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          } else if (snapshot.hasError) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error, size: 48, color: Colors.red),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Error: ${snapshot.error}',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                ],
+              ),
+            );
+          } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return const Center(
               child: Text('No landmarks found'),
-            )
-          : ListView.builder(
-              itemCount: landmarks.length,
-              itemBuilder: (context, index) {
-                return LandmarkCard(landmark: landmarks[index]);
-              },
-            ),
+            );
+          }
+
+          final landmarks = snapshot.data!;
+          return ListView.builder(
+            itemCount: landmarks.length,
+            itemBuilder: (context, index) {
+              return LandmarkCard(landmark: landmarks[index]);
+            },
+          );
+        },
+      ),
     );
   }
 }
