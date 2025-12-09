@@ -2,23 +2,46 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
+import 'package:dio/dio.dart';
 import '../models/landmark.dart';
 
 class ApiService {
   static const String baseUrl = 'https://labs.anontech.info/cse489/t3/api.php';
+  late final Dio _dio;
+
+  ApiService() {
+    _dio = Dio(BaseOptions(
+      baseUrl: baseUrl,
+      connectTimeout: const Duration(seconds: 30),
+      receiveTimeout: const Duration(seconds: 30),
+      sendTimeout: const Duration(seconds: 30),
+      validateStatus: (status) {
+        return status != null && status < 500;
+      },
+    ));
+    
+    // Add interceptor for debugging
+    _dio.interceptors.add(LogInterceptor(
+      request: true,
+      requestHeader: true,
+      requestBody: true,
+      responseHeader: false,
+      responseBody: true,
+      error: true,
+      logPrint: (obj) => debugPrint(obj.toString()),
+    ));
+  }
 
   Future<List<Landmark>> fetchLandmarks() async {
     try {
-      final uri = Uri.parse(baseUrl);
-      final response = await http.get(uri).timeout(const Duration(seconds: 10));
+      final response = await _dio.get(baseUrl);
 
-      debugPrint('GET $uri => ${response.statusCode}');
-      final previewLen = response.body.length > 200 ? 200 : response.body.length;
-      debugPrint('Body (first $previewLen chars): ${response.body.substring(0, previewLen)}');
+      debugPrint('GET $baseUrl => ${response.statusCode}');
+      final previewLen = response.data.toString().length > 200 ? 200 : response.data.toString().length;
+      debugPrint('Body (first $previewLen chars): ${response.data.toString().substring(0, previewLen)}');
 
       if (response.statusCode == 200) {
-        final decoded = json.decode(response.body);
+        final decoded = response.data;
 
         List<dynamic> items;
         if (decoded is List) {
@@ -36,10 +59,13 @@ class ApiService {
       } else {
         throw Exception('Failed to load landmarks: ${response.statusCode}');
       }
-    } on TimeoutException {
-      throw Exception('Error fetching landmarks: request timed out');
-    } on SocketException {
-      throw Exception('Error fetching landmarks: network unavailable');
+    } on DioException catch (e) {
+      if (e.type == DioExceptionType.connectionTimeout || e.type == DioExceptionType.receiveTimeout) {
+        throw Exception('Error fetching landmarks: request timed out');
+      } else if (e.type == DioExceptionType.connectionError) {
+        throw Exception('Error fetching landmarks: network unavailable');
+      }
+      throw Exception('Error fetching landmarks: ${e.message}');
     } catch (e) {
       throw Exception('Error fetching landmarks: $e');
     }
@@ -47,30 +73,26 @@ class ApiService {
 
   Future<bool> createLandmark(Landmark landmark, File? imageFile) async {
     try {
-      var request = http.MultipartRequest('POST', Uri.parse(baseUrl));
+      final formData = FormData.fromMap({
+        'title': landmark.title,
+        'lat': landmark.lat.toString(),
+        'lon': landmark.lon.toString(),
+        if (imageFile != null)
+          'image': await MultipartFile.fromFile(imageFile.path, filename: 'image.jpg'),
+      });
 
-      request.fields['title'] = landmark.title;
-      request.fields['lat'] = landmark.lat.toString();
-      request.fields['lon'] = landmark.lon.toString();
-
-      if (imageFile != null) {
-        request.files.add(
-          await http.MultipartFile.fromPath(
-            'image',
-            imageFile.path,
-          ),
-        );
-      }
-
-      final response = await request.send();
+      final response = await _dio.post(baseUrl, data: formData);
+      
       debugPrint('POST $baseUrl => ${response.statusCode}');
-
-      if (response.statusCode >= 200 && response.statusCode < 300) {
+      debugPrint('Response: ${response.data}');
+      
+      if (response.statusCode != null && response.statusCode! >= 200 && response.statusCode! < 300) {
         return true;
       } else {
-        final body = await response.stream.bytesToString();
-        throw Exception('${response.statusCode}: $body');
+        throw Exception('${response.statusCode}: ${response.data}');
       }
+    } on DioException catch (e) {
+      throw Exception('${e.response?.statusCode}: ${e.response?.data ?? e.message}');
     } catch (e) {
       throw Exception('$e');
     }
@@ -78,55 +100,110 @@ class ApiService {
 
   Future<bool> updateLandmark(Landmark landmark, File? imageFile) async {
     try {
-      final uri = Uri.parse('$baseUrl?id=${landmark.id}');
-      final request = http.MultipartRequest('PUT', uri);
-
       debugPrint('UPDATE - ID: ${landmark.id}, Title: ${landmark.title}, Lat: ${landmark.lat}, Lon: ${landmark.lon}');
-      
-      request.fields['id'] = landmark.id;
-      request.fields['title'] = landmark.title;
-      request.fields['lat'] = landmark.lat.toString();
-      request.fields['lon'] = landmark.lon.toString();
 
+      String? newImagePath;
+
+      // Step 1: If new image, upload it first by creating a temporary landmark
       if (imageFile != null) {
-        request.files.add(
-          await http.MultipartFile.fromPath('image', imageFile.path),
-        );
+        debugPrint('Step 1: Uploading new image...');
+        try {
+          final tempFormData = FormData.fromMap({
+            'title': 'TEMP_${DateTime.now().millisecondsSinceEpoch}',
+            'lat': landmark.lat.toString(),
+            'lon': landmark.lon.toString(),
+            'image': await MultipartFile.fromFile(
+              imageFile.path,
+              filename: imageFile.path.split('/').last,
+            ),
+          });
+
+          final uploadResp = await _dio.post(baseUrl, data: tempFormData);
+          debugPrint('Image upload response: ${uploadResp.data}');
+
+          // Extract the image path from the created entry
+          if (uploadResp.data is Map) {
+            // Try different possible field names
+            newImagePath = uploadResp.data['image'] ?? 
+                          uploadResp.data['data']?['image'] ??
+                          uploadResp.data['landmark']?['image'];
+            
+            // Delete the temp entry if we got an ID back
+            if (uploadResp.data['id'] != null || uploadResp.data['data']?['id'] != null) {
+              final tempId = uploadResp.data['id'] ?? uploadResp.data['data']?['id'];
+              try {
+                await _dio.delete('$baseUrl?id=$tempId');
+                debugPrint('Deleted temp entry: $tempId');
+              } catch (e) {
+                debugPrint('Could not delete temp entry: $e');
+              }
+            }
+          }
+          debugPrint('Extracted image path: $newImagePath');
+        } catch (e) {
+          debugPrint('Image upload failed: $e');
+          // Continue without image update
+        }
       }
 
-      final response = await request.send();
-      debugPrint('PUT $uri => ${response.statusCode}');
+      // Step 2: Update the landmark with form-urlencoded (with or without new image path)
+      debugPrint('Step 2: Updating landmark data...');
+      final Map<String, dynamic> data = {
+        'id': landmark.id,
+        'title': landmark.title,
+        'lat': landmark.lat.toString(),
+        'lon': landmark.lon.toString(),
+      };
 
-      if (response.statusCode >= 200 && response.statusCode < 300) {
+      if (newImagePath != null) {
+        data['image'] = newImagePath;
+      }
+
+      final response = await _dio.put(
+        baseUrl,
+        data: data,
+        options: Options(
+          contentType: Headers.formUrlEncodedContentType,
+        ),
+      );
+      
+      debugPrint('PUT $baseUrl => ${response.statusCode}');
+      debugPrint('Response: ${response.data}');
+
+      if (response.statusCode != null && response.statusCode! >= 200 && response.statusCode! < 300) {
         return true;
       } else {
-        final body = await response.stream.bytesToString();
-        debugPrint('PUT Error Response: $body');
-        throw Exception('${response.statusCode}: $body');
+        debugPrint('PUT Error Response: ${response.data}');
+        throw Exception('${response.statusCode}: ${response.data}');
       }
+    } on DioException catch (e) {
+      debugPrint('Exception: ${e.response?.statusCode}: ${e.response?.data ?? e.message}');
+      throw Exception('${e.response?.statusCode}: ${e.response?.data ?? e.message}');
     } catch (e) {
-      debugPrint('PUT Exception: $e');
+      debugPrint('Exception: $e');
       throw Exception('$e');
     }
   }
 
   Future<bool> deleteLandmark(String id) async {
     try {
-      final uri = Uri.parse('$baseUrl?id=$id');
-      final response = await http.delete(uri).timeout(const Duration(seconds: 10));
+      final response = await _dio.delete('$baseUrl?id=$id');
 
-      debugPrint('DELETE $uri => ${response.statusCode}');
-      debugPrint('Response: ${response.body}');
+      debugPrint('DELETE $baseUrl?id=$id => ${response.statusCode}');
+      debugPrint('Response: ${response.data}');
 
-      if (response.statusCode >= 200 && response.statusCode < 300) {
+      if (response.statusCode != null && response.statusCode! >= 200 && response.statusCode! < 300) {
         return true;
       } else {
         throw Exception('${response.statusCode}');
       }
-    } on TimeoutException {
-      throw Exception('Request timed out');
-    } on SocketException {
-      throw Exception('Network error');
+    } on DioException catch (e) {
+      if (e.type == DioExceptionType.connectionTimeout || e.type == DioExceptionType.receiveTimeout) {
+        throw Exception('Request timed out');
+      } else if (e.type == DioExceptionType.connectionError) {
+        throw Exception('Network error');
+      }
+      throw Exception('${e.message}');
     } catch (e) {
       throw Exception('$e');
     }
