@@ -9,7 +9,7 @@ This repository currently contains an initial placeholder README. Add your lab w
 ## Suggested Structure
 - `src/` for code
 - `docs/` for any reports or notes
-- `data/` for input datasets (if allowed by your course policy)
+- `data/` for input datasets
 
 ## Next Steps
 - Replace this placeholder with course-specific details, requirements, and run instructions.
